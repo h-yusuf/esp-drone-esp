@@ -40,6 +40,10 @@ void app_main()
     * app_main will initialize and start everything
     */
 
+    /* S2 Mini: give the host time to enumerate USB CDC console before the
+     * heavy init below; without this the port never shows up on macOS. */
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
     /* initialize nvs flash prepare for Wi-Fi */
     esp_err_t ret = nvs_flash_init();
 
