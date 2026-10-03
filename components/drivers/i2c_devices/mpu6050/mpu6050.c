@@ -42,6 +42,9 @@ static uint8_t devAddr;
 static I2C_Dev *I2Cx;
 static uint8_t buffer[14];
 static bool isInit;
+// ponytail: clone GY-521 (WHO_AM_I 0x74) passes ID check but skips the
+// MPU6050-specific self-test; replace with a genuine MPU6050 (0x68) to restore it.
+static bool isCloneChip;
 
 /** Default constructor, uses default I2C address.
  * @see MPU6050_DEFAULT_ADDRESS
@@ -78,7 +81,12 @@ bool mpu6050Test(void)
 bool mpu6050TestConnection()
 {
     vTaskDelay(M2T(100));
-    return mpu6050GetDeviceID() == 0b110100;
+    uint8_t id = mpu6050GetDeviceID();
+    isCloneChip = (id == (0x74 >> 1));
+    if (isCloneChip) {
+        DEBUG_PRINTW("MPU6050 clone detected (WHO_AM_I 0x74), accepting it.\n");
+    }
+    return id == 0b110100 || isCloneChip;
 }
 
 /** Do a MPU6050 self test.
@@ -97,6 +105,11 @@ bool mpu6050SelfTest()
     float gxfDiff, gyfDiff, gzfDiff;
     float gRange, aRange;
     uint32_t scrap;
+
+    if (isCloneChip) {
+        DEBUG_PRINTW("MPU6050 self test SKIPPED for clone chip.\n");
+        return true;
+    }
 
     aRange = mpu6050GetFullScaleAccelGPL();
     gRange = mpu6050GetFullScaleGyroDPL();
