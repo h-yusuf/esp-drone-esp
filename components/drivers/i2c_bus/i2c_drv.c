@@ -38,6 +38,9 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 
+#include "driver/gpio.h"
+#include "esp_rom_sys.h"
+
 #include "stm32_legacy.h"
 #include "i2c_drv.h"
 #include "config.h"
@@ -77,10 +80,40 @@ I2cDrv deckBus = {
     .def                = &deckBusDef,
 };
 
+// The MPU6050 keeps power across an ESP reset, so a reset in the middle of a transfer can leave it
+// holding SDA low forever (bus never answers -> "MPU6050 I2C connection [FAIL]").
+// Standard I2C bus recovery: clock SCL until the slave releases SDA, then send a STOP.
+static void i2cdrvRecoverBus(int port, int sda, int scl)
+{
+    gpio_set_direction(sda, GPIO_MODE_INPUT_OUTPUT_OD);
+    gpio_set_direction(scl, GPIO_MODE_INPUT_OUTPUT_OD);
+    gpio_set_level(sda, 1);
+    gpio_set_level(scl, 1);
+    esp_rom_delay_us(5);
+    if (gpio_get_level(sda)) {
+        return;
+    }
+    for (int i = 0; i < 9 && !gpio_get_level(sda); i++) {
+        gpio_set_level(scl, 0);
+        esp_rom_delay_us(5);
+        gpio_set_level(scl, 1);
+        esp_rom_delay_us(5);
+    }
+    gpio_set_level(sda, 0); // START then STOP (SDA rises while SCL high)
+    esp_rom_delay_us(5);
+    gpio_set_level(sda, 1);
+    esp_rom_delay_us(5);
+    DEBUG_PRINTW(" i2c %d SDA was stuck low, recovered = %d", port, gpio_get_level(sda));
+}
+
 static void i2cdrvInitBus(I2cDrv *i2c)
 {
     if (isinit_i2cPort[i2c->def->i2cPort]) {
         return;
+    }
+
+    if (i2c->def->gpioPullup == GPIO_PULLUP_DISABLE) { // only buses with external pull-ups (MPU6050 bus)
+        i2cdrvRecoverBus(i2c->def->i2cPort, i2c->def->gpioSDAPin, i2c->def->gpioSCLPin);
     }
 
     i2c_config_t conf = {0};

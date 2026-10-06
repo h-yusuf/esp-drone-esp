@@ -337,13 +337,18 @@ void processMagnetometerMeasurements(const uint8_t *buffer)
     }
 }
 
+// Zora S2 Mini build: the GY-521 sits with its X arrow to the FRONT (M1/M4 side) and Y to the LEFT,
+// i.e. the same axes as the ESPlane V1 board, not the 90-degree-rotated ESP-Drone layout.
+// Verified 2026-10-06 by pressing each motor corner down and reading roll/pitch.
+#define IMU_AXES_X_FWD_Y_LEFT 1
+
 void processAccGyroMeasurements(const uint8_t *buffer)
 {
     /*  Note the ordering to correct the rotated 90º IMU coordinate system */
 
     Axis3f accScaled;
 
-#ifdef CONFIG_TARGET_ESPLANE_V1
+#if defined(CONFIG_TARGET_ESPLANE_V1) || IMU_AXES_X_FWD_Y_LEFT
     /* sensors step 2.1 read from buffer */
     accelRaw.x = (((int16_t)buffer[0]) << 8) | buffer[1];
     accelRaw.y = (((int16_t)buffer[2]) << 8) | buffer[3];
@@ -374,7 +379,7 @@ void processAccGyroMeasurements(const uint8_t *buffer)
     }
 
     /* sensors step 2.4 convert  digtal value to physical angle */
-#ifdef CONFIG_TARGET_ESPLANE_V1
+#if defined(CONFIG_TARGET_ESPLANE_V1) || IMU_AXES_X_FWD_Y_LEFT
     sensorData.gyro.x = (gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
 #else
     sensorData.gyro.x = -(gyroRaw.x - gyroBias.x) * SENSORS_DEG_PER_LSB_CFG;
@@ -385,7 +390,7 @@ void processAccGyroMeasurements(const uint8_t *buffer)
     /* sensors step 2.5 low pass filter */
     applyAxis3fLpf((lpf2pData *)(&gyroLpf), &sensorData.gyro);
 
-#ifdef CONFIG_TARGET_ESPLANE_V1
+#if defined(CONFIG_TARGET_ESPLANE_V1) || IMU_AXES_X_FWD_Y_LEFT
     accScaled.x = (accelRaw.x) * SENSORS_G_PER_LSB_CFG / accScale;
 #else
     accScaled.x = -(accelRaw.x) * SENSORS_G_PER_LSB_CFG / accScale;   
@@ -411,7 +416,18 @@ static void sensorsDeviceInit(void)
     i2cdevInit(I2C0_DEV);
     mpu6050Init(I2C0_DEV);
 
-    if (mpu6050TestConnection() == true) {
+    // The clone GY-521 sometimes ignores the bus right after a cold power-on (USB plug / battery),
+    // which used to hang the whole firmware below. Retry for ~6 s before giving up.
+    bool mpuOk = false;
+    for (int i = 0; i < 20 && !mpuOk; i++) {
+        mpuOk = mpu6050TestConnection();
+        if (!mpuOk) {
+            DEBUG_PRINTW("MPU6050 not answering (id 0x%02X), retry %d/20\n", mpu6050GetDeviceID() << 1, i + 1);
+            vTaskDelay(M2T(200));
+        }
+    }
+
+    if (mpuOk) {
         DEBUG_PRINTI("MPU6050 I2C connection [OK].\n");
     } else {
         DEBUG_PRINTE("MPU6050 I2C connection [FAIL].\n");
