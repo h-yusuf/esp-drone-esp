@@ -30,8 +30,27 @@
 #include "stm32_legacy.h"
 #include "platform.h"
 #include "system.h"
+#include "log.h"
 #define DEBUG_MODULE "APP_MAIN"
 #include "debug_cf.h"
+
+#ifdef CONFIG_DEBUG_PRINT_ATTITUDE
+static void attitudePrintTask(void *arg)
+{
+    vTaskDelay(pdMS_TO_TICKS(8000)); // wait for logInit() in the system task
+    logVarId_t r = logGetVarId("stabilizer", "roll"), p = logGetVarId("stabilizer", "pitch");
+    logVarId_t y = logGetVarId("stabilizer", "yaw"), t = logGetVarId("stabilizer", "thrust");
+    logVarId_t m1 = logGetVarId("pwm", "m1_pwm"), m2 = logGetVarId("pwm", "m2_pwm");
+    logVarId_t m3 = logGetVarId("pwm", "m3_pwm"), m4 = logGetVarId("pwm", "m4_pwm");
+    logVarId_t v = logGetVarId("pm", "vbat");
+    while (1) {
+        printf("ATT roll=%7.2f pitch=%7.2f yaw=%7.2f | thrust=%6.0f | pwm=%5d %5d %5d %5d | vbat=%.2f\n",
+               logGetFloat(r), logGetFloat(p), logGetFloat(y), logGetFloat(t),
+               logGetInt(m1), logGetInt(m2), logGetInt(m3), logGetInt(m4), logGetFloat(v));
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+#endif
 
 void app_main()
 {
@@ -61,5 +80,9 @@ void app_main()
 
     /*launch the system task */
     systemLaunch();
+
+#ifdef CONFIG_DEBUG_PRINT_ATTITUDE
+    xTaskCreate(attitudePrintTask, "ATTPRINT", 3072, NULL, 1, NULL);
+#endif
 
 }

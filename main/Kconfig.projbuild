@@ -93,6 +93,13 @@ menu "ESPDrone Config"
 
     menu "system"
 
+        config DEBUG_PRINT_ATTITUDE
+            bool "Print attitude/thrust/PWM/vbat to console at 5 Hz (bench debug)"
+            default n
+            help
+                Bench-test helper: prints stabilizer roll/pitch/yaw, thrust,
+                motor PWM and battery voltage over the console. Turn off for flight.
+
         config BASE_STACK_SIZE
             int "base stack size for system task"
             range 512 1024
