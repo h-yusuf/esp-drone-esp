@@ -26,6 +26,8 @@
 
 #include <math.h>
 #include <inttypes.h>
+#include "driver/gpio.h"
+#include "crtp.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -253,10 +255,21 @@ static void stabilizerTask(void* param)
 
   DEBUG_PRINTI("Wait for sensor calibration...\n");
 
-  // Wait for sensors to be calibrated
+  // Wait for sensors to be calibrated.
+  // S2 Mini onboard blue LED (GPIO15) shows status without USB:
+  //   off            = firmware not running / stuck before this point
+  //   fast (10x/s)   = MPU6050 not found
+  //   medium (4x/s)  = calibrating gyro, keep the drone still
+  //   slow (1x/s)    = ready, waiting for the app
+  //   solid          = app connected
+  //   fast (10x/s) after being ready = emergency stop, motors killed until reboot
+  gpio_set_direction(GPIO_NUM_15, GPIO_MODE_OUTPUT);
+  const uint32_t blinkTicks = sensorsTest() ? RATE_MAIN_LOOP / 8 : RATE_MAIN_LOOP / 20;
+  uint32_t waitTicks = 0;
   lastWakeTime = xTaskGetTickCount();
   while(!sensorsAreCalibrated()) {
     vTaskDelayUntil(&lastWakeTime, F2T(RATE_MAIN_LOOP));
+    gpio_set_level(GPIO_NUM_15, (++waitTicks / blinkTicks) & 1);
   }
   // Initialize tick to something else then 0
   tick = 1;
@@ -318,6 +331,12 @@ static void stabilizerTask(void* param)
       }*/
     }
     calcSensorToOutputLatency(&sensorData);
+    if (tick % 50 == 0) {
+      int led = (tick / (RATE_MAIN_LOOP / 2)) & 1;               // slow: waiting for app
+      if (crtpIsConnected()) led = 1;                             // solid: app connected
+      if (emergencyStop) led = (tick / (RATE_MAIN_LOOP / 20)) & 1; // fast: motors killed (e.g. tumble detected)
+      gpio_set_level(GPIO_NUM_15, led);
+    }
     tick++;
     STATS_CNT_RATE_EVENT(&stabilizerRate);
 
