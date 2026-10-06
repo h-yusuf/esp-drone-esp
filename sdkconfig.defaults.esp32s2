@@ -4,3 +4,6 @@ CONFIG_ESP32S2_DEFAULT_CPU_FREQ_MHZ=240
 # LOLIN S2 Mini: 4MB embedded flash, log over native USB-C (UART0 pins not on header)
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_ESP_CONSOLE_USB_CDC=y
+# Level calibration (deg*100) for the assembled Zora frame, measured 2026-10-06
+CONFIG_PITCH_CALIB=158
+CONFIG_ROLL_CALIB=-37
